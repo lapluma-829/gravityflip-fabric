@@ -3,10 +3,13 @@ package com.gravityflip.fabric;
 import gravity_changer.api.GravityChangerAPI;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.damage.DamageSource;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -33,12 +36,48 @@ public class GravityFlipFabric implements ModInitializer {
     /** 同一 tick 内多重伤害（火焰+近战）只翻一次。 */
     private static final int FLIP_COOLDOWN_TICKS = 8;
     private static final Map<UUID, Long> LAST_FLIP = new ConcurrentHashMap<>();
+    /** 沿重力方向累计的「坠落」距离，用于自定义坠落伤害。 */
+    private static final Map<UUID, Double> FALL_DISTANCE = new ConcurrentHashMap<>();
 
     @Override
     public void onInitialize() {
         // ALLOW_DAMAGE 在 1.20.1 的 Fabric API 里可用（AFTER_DAMAGE 是更晚版本才有的）。
         ServerLivingEntityEvents.ALLOW_DAMAGE.register(this::onAllowDamage);
+        ServerTickEvents.END_SERVER_TICK.register(this::onServerTick);
         LOGGER.info("Gravity Flip 已加载（依赖 Gravity Changer 提供物理）");
+    }
+
+    private void onServerTick(MinecraftServer server) {
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            applyFallDamage(player);
+        }
+    }
+
+    /**
+     * 原版坠落伤害只看世界 Y 轴，重力换个方向就不会触发。
+     * 这里沿实际重力方向累计距离，真正落地时按原版公式扣血。
+     */
+    private void applyFallDamage(ServerPlayerEntity player) {
+        UUID id = player.getUuid();
+        Direction direction = GravityChangerAPI.getGravityDirection(player);
+        if (direction == Direction.DOWN || player.isCreative() || player.isSpectator()
+                || player.isTouchingWater() || player.isInLava() || player.isFallFlying()) {
+            FALL_DISTANCE.put(id, 0.0D);
+            return;
+        }
+        Vec3d velocity = player.getVelocity();
+        double along = velocity.x * direction.getOffsetX()
+                + velocity.y * direction.getOffsetY()
+                + velocity.z * direction.getOffsetZ();
+        double distance = FALL_DISTANCE.getOrDefault(id, 0.0D);
+        if (player.isOnGround()) {
+            if (distance > 3.0D) {
+                player.damage(player.getDamageSources().fall(), (float) (distance - 3.0D));
+            }
+            FALL_DISTANCE.put(id, 0.0D);
+        } else if (along > 0.0D) {
+            FALL_DISTANCE.put(id, distance + along);
+        }
     }
 
     private boolean onAllowDamage(LivingEntity entity, DamageSource source, float amount) {
