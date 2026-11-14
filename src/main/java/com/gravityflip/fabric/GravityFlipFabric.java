@@ -36,26 +36,24 @@ public class GravityFlipFabric implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        ServerLivingEntityEvents.AFTER_DAMAGE.register(this::onAfterDamage);
+        // ALLOW_DAMAGE 在 1.20.1 的 Fabric API 里可用（AFTER_DAMAGE 是更晚版本才有的）。
+        ServerLivingEntityEvents.ALLOW_DAMAGE.register(this::onAllowDamage);
         LOGGER.info("Gravity Flip 已加载（依赖 Gravity Changer 提供物理）");
     }
 
-    private void onAfterDamage(LivingEntity entity, DamageSource source, float baseDamage,
-                               float damageTaken, boolean blocked) {
-        if (!(entity instanceof ServerPlayerEntity player) || damageTaken <= 0.0F) {
-            return;
+    private boolean onAllowDamage(LivingEntity entity, DamageSource source, float amount) {
+        if (entity instanceof ServerPlayerEntity player && amount > 0.0F) {
+            long now = player.getWorld().getTime();
+            Long last = LAST_FLIP.get(player.getUuid());
+            if (last == null || now - last >= FLIP_COOLDOWN_TICKS) {
+                LAST_FLIP.put(player.getUuid(), now);
+                Direction current = GravityChangerAPI.getBaseGravityDirection(player);
+                Direction next = randomOther(current);
+                GravityChangerAPI.setBaseGravityDirection(player, next);
+                LOGGER.info("{} 的重力翻转为 {}", player.getGameProfile().getName(), label(next));
+            }
         }
-        long now = player.getWorld().getTime();
-        Long last = LAST_FLIP.get(player.getUuid());
-        if (last != null && now - last < FLIP_COOLDOWN_TICKS) {
-            return;
-        }
-        LAST_FLIP.put(player.getUuid(), now);
-
-        Direction current = GravityChangerAPI.getBaseGravityDirection(player);
-        Direction next = randomOther(current);
-        GravityChangerAPI.setBaseGravityDirection(player, next);
-        LOGGER.info("{} 的重力翻转为 {}", player.getGameProfile().getName(), label(next));
+        return true; // 不阻止原本的伤害
     }
 
     private static Direction randomOther(Direction current) {
