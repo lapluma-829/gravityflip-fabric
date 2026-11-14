@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "gravityflip",
+  "version": "${version}",
+  "name": "Gravity Flip",
+  "description": "受伤后重力随机翻转到另一个方向。物理由 Gravity Changer 提供。",
+  "authors": [
+    "lapluma-829"
+  ],
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.gravityflip.fabric.GravityFlipFabric"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "minecraft": "1.20.1",
+    "gravity_changer_q": ">=1.1.0"
+  }
+}
